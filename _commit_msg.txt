@@ -1,0 +1,18 @@
+feat: adaptive singles/doubles tracking, RTMPose default, performance tooling
+
+- Core: rewrite PlayerTracker with adaptive A/B/C/D slot model
+  (singles=A/B, doubles=A/B/C/D), warmup auto-detection, nearest-neighbor
+  slot matching, ghost-hold for brief tracking gaps
+- Detection: RTMPose as default pose family; fix YOLOX detector input
+  sizes (yolox_tiny=416, yolox_m=640); lower YOLO11n-pose conf to 0.15
+  with degraded centroid fallback
+- Visualization: Alibaba PuHuiTi font for all Chinese text; stats panels
+  stacked right-side single column (no overlap); legend moved to court
+  plot upper-left to avoid stats panel collision
+- Frontend: match_type dropdown (auto/singles/doubles); default
+  pose_family=rtmpose; scrolling StatusTimeline with live FPS/progress
+- API: match_type field propagated through all layers (models/app/jobs/
+  service/system)
+- Benchmark: add benchmark_pose.py and benchmark_compare.py for
+  per-stage profiling across RTMPose/RTMO/YOLO11n-pose modes
+- Git: add .trae/ to .gitignore
