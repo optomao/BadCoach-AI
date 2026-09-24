@@ -1,4 +1,4 @@
-﻿import json
+import json
 import os
 import tempfile
 import time
@@ -61,14 +61,15 @@ def load_runtime_dependencies():
     SCHEMA_VERSION = _SCHEMA_VERSION
 
 class BadmintonAnalysisSystem:
-    def __init__(self, video_path, show_display=True, 
-                 show_skeletons=True, show_player_trajectories=True, 
+    def __init__(self, video_path, show_display=True,
+                 show_skeletons=True, show_player_trajectories=True,
                  show_court_trajectory=True, show_shuttlecock_trajectory=True,
-                 show_player_stats=True, show_performance_stats=False, 
+                 show_player_stats=True, show_performance_stats=False,
                  save_images=False, language='zh', output_dir=None,
                  ball_model_path='weights/yolo11s-ball.pt', template_path=None,
                  pose_mode='balanced', pose_family='rtmpose',
-                 yolo_pose_model='yolo11n-pose.pt', show_pose_roi=True):
+                 yolo_pose_model='yolo11n-pose.pt', show_pose_roi=True,
+                 match_type='auto'):
         self.video_path = video_path
         self.show_display = show_display
         self.language = language
@@ -78,6 +79,7 @@ class BadmintonAnalysisSystem:
         self.pose_family = pose_family
         self.yolo_pose_model = yolo_pose_model
         self.show_pose_roi = show_pose_roi
+        self.match_type = match_type
 
 
         self.show_skeletons = show_skeletons
@@ -205,14 +207,15 @@ class BadmintonAnalysisSystem:
         self.court_corners = corners
         self.court_roi_corners = roi_corners
 
-        self._write_metadata(fps, total_frames, video_duration, template_path, corners, roi_corners, mid_height)
         self.detection_writer = JsonlDetectionWriter(self.detections_path)
-        
 
         self.court_mapper = CourtMapper(corners)
         self.player_pose_visualizer.court_mapper = self.court_mapper
         self.player_tracker = PlayerTracker(corners=corners, threshold=mid_height, history_size=30,
-                                          detection_writer=self.detection_writer, fps=fps)
+                                          detection_writer=self.detection_writer, fps=fps,
+                                          match_type=self.match_type)
+
+        self._write_metadata(fps, total_frames, video_duration, template_path, corners, roi_corners, mid_height)
         
 
         self.stats_visualizer = StatsVisualizer(
@@ -234,7 +237,9 @@ class BadmintonAnalysisSystem:
             frame_count += 1
             if total_frames > 0 and frame_count % max(1, total_frames // 30 or 1) == 0:
                 progress = min(80, 15 + int(frame_count / total_frames * 65))
-                self._emit_progress("processing", progress, f"Processing frame {frame_count}/{total_frames}")
+                elapsed = time.time() - self.start_time
+                current_fps = frame_count / elapsed if elapsed > 0 else 0
+                self._emit_progress("processing", progress, f"Processing frame {frame_count}/{total_frames} ({current_fps:.1f} fps)", fps=current_fps)
             frame, detect_frame_count = self._process_frame(frame, template_gray, corners, roi_corners, frame_count, out, detect_frame_count)
 
         self.end_time = time.time()
@@ -247,13 +252,16 @@ class BadmintonAnalysisSystem:
         
         self._cleanup(cap)
 
-    def _emit_progress(self, stage, progress, message):
+    def _emit_progress(self, stage, progress, message, fps=None):
         if callable(self.progress_callback):
-            self.progress_callback({
+            payload = {
                 "stage": stage,
                 "progress": progress,
                 "message": message,
-            })
+            }
+            if fps is not None:
+                payload["fps"] = round(fps, 1)
+            self.progress_callback(payload)
 
     def _should_cancel(self):
         return callable(self.cancel_callback) and self.cancel_callback()
@@ -283,6 +291,11 @@ class BadmintonAnalysisSystem:
                     "width": 6.1,
                     "length": 13.4,
                 },
+            },
+            "match": {
+                "configured_type": self.match_type,
+                "detected_mode": getattr(self.player_tracker, "match_mode", None),
+                "active_slots": getattr(self.player_tracker, "active_slots", None),
             },
             "outputs": {
                 "video": self.output_video_path,

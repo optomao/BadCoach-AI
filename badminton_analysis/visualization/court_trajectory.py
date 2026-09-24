@@ -168,28 +168,35 @@ class CourtTrajectoryVisualizer:
             doubles_width = 6.10  # 双打场地宽度
             court_length = 13.40  # 场地长度
             
-            # 绘制球员轨迹（合并上下方球员的逻辑）
-            for position, color in [('upper', (0, 255, 255)), ('lower', (255, 0, 255))]:
-                if position in court_history:
-                    history = court_history[position]
-                    # 将deque转换为列表以便处理
-                    history_list = list(history)
-                    
-                    for i, pos in enumerate(history_list):
-                        if pos is not None and len(pos) >= 2:
-                            # 将球场坐标归一化，然后转换为小球场坐标
-                            x_norm = pos[0] / doubles_width
-                            y_norm = pos[1] / court_length
-                            
-                            x = int(x_norm * court_width + offset_x)
-                            y = int(y_norm * court_height + offset_y)
-                            
-                            if 0 <= x < width and 0 <= y < height:
-                                # 计算半径，越新的点半径越大，根据视频尺寸缩放
-                                radius_min = max(2, int(2 * scale_factor))
-                                radius_max = max(3, int(5 * scale_factor))
-                                radius = int(radius_min + (i / len(history_list)) * (radius_max - radius_min)) if len(history_list) > 1 else radius_min
-                                cv2.circle(overlay, (x, y), radius, color, -1)  # upper:黄青色, lower:品红色
+            # 按实际槽位键遍历(单打 A/B,双打 A/B/C/D,兼容旧 upper/lower)
+            slot_colors = {
+                'A': (0, 255, 255), 'upper': (0, 255, 255),
+                'B': (0, 200, 0),
+                'C': (255, 0, 255), 'lower': (255, 0, 255),
+                'D': (0, 130, 255),
+            }
+            for slot, history in court_history.items():
+                color = slot_colors.get(slot, (0, 255, 255))
+                if history is None:
+                    continue
+                # 将deque转换为列表以便处理
+                history_list = list(history)
+
+                for i, pos in enumerate(history_list):
+                    if pos is not None and len(pos) >= 2:
+                        # 将球场坐标归一化，然后转换为小球场坐标
+                        x_norm = pos[0] / doubles_width
+                        y_norm = pos[1] / court_length
+
+                        x = int(x_norm * court_width + offset_x)
+                        y = int(y_norm * court_height + offset_y)
+
+                        if 0 <= x < width and 0 <= y < height:
+                            # 计算半径，越新的点半径越大，根据视频尺寸缩放
+                            radius_min = max(2, int(2 * scale_factor))
+                            radius_max = max(3, int(5 * scale_factor))
+                            radius = int(radius_min + (i / len(history_list)) * (radius_max - radius_min)) if len(history_list) > 1 else radius_min
+                            cv2.circle(overlay, (x, y), radius, color, -1)  # upper:黄青色, lower:品红色
                 
             # 将球场叠加到视频帧的右上角
             h, w = overlay.shape[:2]

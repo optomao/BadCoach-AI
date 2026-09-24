@@ -1,7 +1,7 @@
 class YOLOPoseProcessor:
     """Ultralytics YOLO pose processor with COCO 17 keypoint output."""
 
-    def __init__(self, model_path="yolo11n-pose.pt", device="auto", conf=0.25):
+    def __init__(self, model_path="yolo11n-pose.pt", device="auto", conf=0.15):
         from ultralytics import YOLO
 
         self.model_path = model_path
@@ -23,7 +23,8 @@ class YOLOPoseProcessor:
         self.model = YOLO(self.model_path)
 
     def process_frame(self, frame):
-        result = self.model(frame, conf=self.conf, device=self.device, verbose=False)[0]
+        result = self.model(frame, conf=self.conf, iou=0.45, device=self.device,
+                            verbose=False, max_det=50)[0]
         if result.keypoints is None or result.keypoints.xy is None:
             return None, None
 

@@ -37,12 +37,19 @@ class StatsVisualizer:
         self.font_path = self._find_chinese_font()
         self._font_cache = {}
         
+        # 各槽位颜色(BGR)
+        self.player_colors = {
+            'A': (0, 255, 255),    # 青
+            'B': (0, 200, 0),      # 绿
+            'C': (255, 0, 255),    # 品红
+            'D': (0, 130, 255),    # 橙
+        }
+
         # 语言文本配置
         self.texts = {
             'zh': {
                 'rally': '回合',
-                'upper_player': '上场球员',
-                'lower_player': '下场球员',
+                'player_suffix': '球员',
                 'stats': '统计',
                 'current_speed': '当前速度',
                 'current_rally': '当前回合',
@@ -56,8 +63,7 @@ class StatsVisualizer:
             },
             'en': {
                 'rally': 'Rally',
-                'upper_player': 'Upper Player',
-                'lower_player': 'Lower Player',
+                'player_suffix': ' Player',
                 'stats': 'Stats',
                 'current_speed': 'Current Speed',
                 'current_rally': 'Current Rally',
@@ -73,17 +79,14 @@ class StatsVisualizer:
 
     def _find_chinese_font(self):
         font_paths = [
+            # 阿里巴巴普惠体 (Alibaba PuHuiTi) - 首选
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts", "AlibabaPuHuiTi-3-35-Thin.ttf"),
+            "C:/Users/io/AI-YuJian-AI/badminton_analysis/visualization/fonts/AlibabaPuHuiTi-3-35-Thin.ttf",
+            # 后备字体
+            "C:/Windows/Fonts/Source Han Serif SC Heavy (TrueType).ttf",
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "simhei.ttf"),
-            os.path.join(os.getcwd(), "simhei.ttf"),
-            "/System/Library/Fonts/Hiragino Sans GB.ttc",
-            "/System/Library/Fonts/STHeiti Medium.ttc",
-            "/System/Library/Fonts/STHeiti Light.ttc",
-            "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-            "/System/Library/Fonts/Supplemental/Songti.ttc",
-            "/Library/Fonts/Arial Unicode.ttf",
             "C:/Windows/Fonts/simhei.ttf",
             "C:/Windows/Fonts/simsun.ttc",
-            "C:/Windows/Fonts/simkai.ttf",
             "C:/Windows/Fonts/msyh.ttc",
         ]
         for path in font_paths:
@@ -156,34 +159,70 @@ class StatsVisualizer:
             # 将PIL图像转回OpenCV格式并替换原始帧
             frame[:] = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
     
-    def draw_player_stats(self, frame, movement_stats, rally_count):
+    def draw_player_stats(self, frame, movement_stats, rally_count, active_slots=None):
         """
-        在画面上显示球员统计信息，包括当前回合和整场比赛数据
-        
+        在画面右侧显示球员统计信息面板,单列右靠齐,不互相重叠。
+
         参数:
             frame: 视频帧
-            movement_stats: 球员统计信息
+            movement_stats: 球员统计信息(按槽位 A/B/C/D 键控)
             rally_count: 当前回合数
+            active_slots: 当前活跃槽位列表(如 ['A','B'] 或 ['A','B','C','D']),
+                          为 None 时退回旧的 upper/lower 兼容
         """
-        # 计算回合数显示位置，基于视频尺寸
-        rally_pos_y = int(self.panel_height + self.frame_height * 0.1) # 第一个面板下方
-              
-        # 使用语言配置显示回合数
         text_items = []
+
+        if not active_slots:
+            active_slots = ['A', 'B']
+            movement_stats = {
+                'A': movement_stats.get('upper', {}),
+                'B': movement_stats.get('lower', {}),
+            }
+
+        n_slots = len(active_slots)
+        is_doubles = n_slots > 2
+
+        # 根据面板数自适应尺寸:双打用紧凑字体和行高,保证 4 块面板纵向不重叠
+        if is_doubles:
+            panel_width = max(150, int(self.panel_width * 0.8))
+            line_height = max(12, int(self.line_height * 0.55))
+            font_scale = max(0.3, self.font_scale * 0.55)
+            thickness = max(1, self.thickness - 1)
+        else:
+            panel_width = self.panel_width
+            line_height = self.line_height
+            font_scale = self.font_scale
+            thickness = self.thickness
+
+        # 计算单块面板高度:内容 10 行 + 上下留白
+        content_lines = 10
+        panel_height = max(content_lines * line_height + 2 * self.margin,
+                           max(80, int(self.panel_height * (0.55 if is_doubles else 1.0))))
+
+        # 左侧单列布局:从顶部开始垂直堆叠,面板间用 margin 间隔
+        x_pos = self.margin
+        total_height = n_slots * panel_height + (n_slots + 1) * self.margin
+        # 若总高度超出画面,压缩面板高度
+        if total_height > self.frame_height:
+            panel_height = max(60, (self.frame_height - (n_slots + 1) * self.margin) // n_slots)
+            line_height = max(10, panel_height // content_lines)
+
+        y_cursor = self.margin
+        for slot in active_slots:
+            title = f"{slot}{self.texts[self.language]['player_suffix']}"
+            color = self.player_colors.get(slot, (0, 255, 255))
+            self._draw_player_panel(frame, title, movement_stats.get(slot, {}),
+                                    x_pos, y_cursor, panel_width, panel_height,
+                                    color, font_scale, thickness, line_height,
+                                    self.background_color, self.background_alpha, text_items)
+            y_cursor += panel_height + self.margin
+
+        # 回合数显示在画面右下角,不遮挡左侧面板
+        rally_pos_y = self.frame_height - int(self.line_height * 2.5)
+        rally_pos_x = self.frame_width - int(self.panel_width * 1.5)
         rally_text = f"{self.texts[self.language]['rally']}: {rally_count}"
-        text_items.append((rally_text, (self.margin, rally_pos_y), self.font_scale*1.5, (0, 165, 255), self.thickness+2))
-        
-        # 绘制上半场球员统计
-        self._draw_player_panel(frame, self.texts[self.language]['upper_player'], movement_stats.get('upper', {}), 
-                               self.margin, int(self.frame_height * 0.05), self.panel_width, self.panel_height, 
-                               (0, 255, 255), self.font_scale, self.thickness, self.line_height, 
-                               self.background_color, self.background_alpha, text_items)
-        
-        # 绘制下半场球员统计
-        self._draw_player_panel(frame, self.texts[self.language]['lower_player'], movement_stats.get('lower', {}), 
-                               self.margin, int(self.frame_height * 0.55), 
-                               self.panel_width, self.panel_height, (255, 0, 255), self.font_scale, self.thickness, 
-                               self.line_height, self.background_color, self.background_alpha, text_items)
+        text_items.append((rally_text, (rally_pos_x, rally_pos_y), self.font_scale*1.5, (0, 165, 255), self.thickness+2))
+
         self._draw_text_batch(frame, text_items)
     
     def _draw_player_panel(self, frame, player_name, stats, x_pos, y_pos, panel_width, panel_height, 

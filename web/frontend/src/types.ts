@@ -8,6 +8,7 @@ export interface JobConfig {
   keep_audio: boolean;
   visualize_positions: boolean;
   ball_model_path: string;
+  match_type: "auto" | "singles" | "doubles";
   trim_enabled: boolean;
   trim_start_sec: string | number | null;
   trim_end_sec: string | number | null;
@@ -50,6 +51,7 @@ export interface SessionSummary {
     fps: number;
     frame_width: number;
     frame_height: number;
+    match_type?: string;
     movement?: Record<string, unknown>;
   };
 }
@@ -60,6 +62,7 @@ export interface JobEvent {
   stage?: string;
   progress?: number;
   message?: string;
+  fps?: number;
   summary?: SessionSummary;
   timestamp?: string;
 }

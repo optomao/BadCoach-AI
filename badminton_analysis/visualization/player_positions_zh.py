@@ -14,20 +14,23 @@ import matplotlib.font_manager as fm
 
 plt.style.use('default')
 
-# 设置中文字体 - 使用simhei.ttf
+# 设置中文字体 - 使用阿里巴巴普惠体 (Alibaba PuHuiTi)
 def _load_chinese_font():
     module_dir = os.path.dirname(os.path.abspath(__file__))
     package_root = os.path.abspath(os.path.join(module_dir, '..', '..', '..'))
     workspace_root = os.path.abspath(os.path.join(package_root, '..'))
     candidates = [
+        # 阿里巴巴普惠体 (Alibaba PuHuiTi) - 首选
+        os.path.join(module_dir, 'fonts', 'AlibabaPuHuiTi-3-35-Thin.ttf'),
+        "C:/Users/io/AI-YuJian-AI/badminton_analysis/visualization/fonts/AlibabaPuHuiTi-3-35-Thin.ttf",
+        # 后备字体
+        "C:/Windows/Fonts/Source Han Serif SC Heavy (TrueType).ttf",
         os.path.join(module_dir, 'simhei.ttf'),
         os.path.join(package_root, 'simhei.ttf'),
         os.path.join(workspace_root, 'simhei.ttf'),
         os.path.join(os.getcwd(), 'simhei.ttf'),
-        '/System/Library/Fonts/Hiragino Sans GB.ttc',
-        '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
-        '/System/Library/Fonts/Supplemental/Songti.ttc',
-        '/Library/Fonts/Arial Unicode.ttf',
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/simsun.ttc",
     ]
 
     for font_path in candidates:
@@ -36,9 +39,9 @@ def _load_chinese_font():
                 fm.fontManager.addfont(font_path)
                 font_name = fm.FontProperties(fname=font_path).get_name()
             except Exception:
-                font_name = 'sans-serif'
-            plt.rcParams['font.family'] = ['sans-serif']
-            plt.rcParams['font.sans-serif'] = [font_name]
+                font_name = 'serif'
+            plt.rcParams['font.family'] = ['serif']
+            plt.rcParams['font.serif'] = [font_name]
             plt.rcParams['axes.unicode_minus'] = False
             return fm.FontProperties(fname=font_path)
 
@@ -97,53 +100,41 @@ class PlayerPositionVisualizer:
         
         self.upper_color = '#d94b4b'
         self.lower_color = '#1f76b4'
-        
+
+        # 按槽位的颜色与标签(单打 A/B,双打 A/B/C/D;兼容旧 upper/lower)
+        self.player_colors = {
+            'A': '#d94b4b', 'B': '#2ca02c', 'C': '#1f76b4', 'D': '#ff7f0e',
+            'upper': '#d94b4b', 'lower': '#1f76b4',
+        }
+        self.player_labels = {
+            'A': 'A球员', 'B': 'B球员', 'C': 'C球员', 'D': 'D球员',
+            'upper': '上场球员', 'lower': '下场球员',
+        }
+
         self.court_line_color = '#33443d'
         
-    def _calculate_movement_stats(self, upper_df, lower_df, rally_segments, frames):
-        """计算每个回合的运动员统计数据（平均速度，最大速度，总移动距离）"""
+    def _calculate_movement_stats(self, slot_dfs, rally_segments, frames):
+        """计算每个回合每位球员的统计数据（平均速度，最大速度，总移动距离）"""
         self.movement_stats = defaultdict(dict)
         frame_times = frames / self.fps  # 将帧数转换为时间(秒)
-        
-        # 计算整场比赛的统计数据
-        all_upper = upper_df[upper_df['valid_coords']]
-        all_lower = lower_df[lower_df['valid_coords']]
-        
-        # 整场比赛统计
-        if not all_upper.empty:
-            self.movement_stats['match']['upper'] = self._calculate_player_stats(
-                all_upper[['court_x', 'court_y']].values, 
-                frame_times[all_upper.index].values
-            )
-            
-        if not all_lower.empty:
-            self.movement_stats['match']['lower'] = self._calculate_player_stats(
-                all_lower[['court_x', 'court_y']].values, 
-                frame_times[all_lower.index].values
-            )
-        
-        # 对每个回合分别计算
+
+        # 计算整场比赛的统计数据(按槽位)
+        for slot, slot_df in slot_dfs.items():
+            all_slot = slot_df[slot_df['valid_coords']]
+            if not all_slot.empty:
+                self.movement_stats['match'][slot] = self._calculate_player_stats(
+                    all_slot[['court_x', 'court_y']].values,
+                    frame_times[all_slot.index].values
+                )
+
+        # 对每个回合分别计算(按槽位)
         for rally_id, (start_idx, end_idx) in enumerate(rally_segments, 1):
-            # 提取当前回合的时间和位置数据
             rally_times = frame_times[start_idx:end_idx].values
-            
-            # 上场球员数据
-            upper_rally = upper_df[(upper_df['rally_id'] == rally_id) & (upper_df['valid_coords'])]
-            upper_positions = upper_rally[['court_x', 'court_y']].values
-            
-            # 下场球员数据
-            lower_rally = lower_df[(lower_df['rally_id'] == rally_id) & (lower_df['valid_coords'])]
-            lower_positions = lower_rally[['court_x', 'court_y']].values
-            
-            # 计算上场球员统计数据
-            if len(upper_positions) > 1:
-                upper_stats = self._calculate_player_stats(upper_positions, rally_times)
-                self.movement_stats[rally_id]['upper'] = upper_stats
-            
-            # 计算下场球员统计数据
-            if len(lower_positions) > 1:
-                lower_stats = self._calculate_player_stats(lower_positions, rally_times)
-                self.movement_stats[rally_id]['lower'] = lower_stats
+            for slot, slot_df in slot_dfs.items():
+                slot_rally = slot_df[(slot_df['rally_id'] == rally_id) & (slot_df['valid_coords'])]
+                positions = slot_rally[['court_x', 'court_y']].values
+                if len(positions) > 1:
+                    self.movement_stats[rally_id][slot] = self._calculate_player_stats(positions, rally_times)
     
     def _calculate_player_stats(self, positions, times):
         """计算单个球员的运动统计数据"""
@@ -217,136 +208,84 @@ class PlayerPositionVisualizer:
         return stats
     
     def _load_data(self):
-        """Load detections.jsonl and convert to required format"""
+        """Load detections.jsonl and convert to required format(按槽位动态识别)"""
         try:
-            rows = []
+            # 第一遍:收集每帧的各槽位球场坐标,同时发现所有槽位键
+            # slot_rows[slot] = list of (frame_index, court_x, court_y)
+            slot_rows: dict[str, list] = defaultdict(list)
+            frame_list: list[int] = []
+            # 兼容旧数据:upper→A, lower→B
+            legacy_map = {"upper": "A", "lower": "B"}
+
             with open(self.detections_path, "r", encoding="utf-8") as file:
                 for line in file:
                     line = line.strip()
                     if not line:
                         continue
                     record = json.loads(line)
-                    players = record.get("players", {})
-                    upper = players.get("upper", {}) or {}
-                    lower = players.get("lower", {}) or {}
-                    upper_court = upper.get("court") or [None, None]
-                    lower_court = lower.get("court") or [None, None]
-                    rows.append({
-                        "Frame": record.get("frame"),
-                        "Upper_Court_X": upper_court[0],
-                        "Upper_Court_Y": upper_court[1],
-                        "Lower_Court_X": lower_court[0],
-                        "Lower_Court_Y": lower_court[1],
-                    })
+                    frame = record.get("frame")
+                    frame_list.append(frame)
+                    players = record.get("players", {}) or {}
+                    for raw_slot, pdata in players.items():
+                        if not isinstance(pdata, dict):
+                            continue
+                        court = pdata.get("court") or [None, None]
+                        slot = legacy_map.get(raw_slot, raw_slot)
+                        slot_rows[slot].append((frame, court[0], court[1]))
 
-            df = pd.DataFrame(rows)
-            
-            print(f"\nData fields: {df.columns.tolist()}")
-            
-            # Check required columns
-            if 'Frame' not in df.columns or \
-               'Upper_Court_X' not in df.columns or 'Upper_Court_Y' not in df.columns or \
-               'Lower_Court_X' not in df.columns or 'Lower_Court_Y' not in df.columns:
-                print("Error: Data file missing required columns like Frame, Upper_Court_X etc.")
+            if not frame_list:
+                print("Error: No frames found in detections file")
                 return pd.DataFrame()
-            
-            # Detect rallies based on frame gaps (similar to hit_point.py)
-            print("Detecting rallies based on frame gaps...")
-            frames = df['Frame'].astype(int).tolist()
+
+            discovered_slots = list(slot_rows.keys())
+            print(f"\nDiscovered player slots: {discovered_slots}")
+
+            # 构建基础 DataFrame(Frame + 每槽位坐标列)
+            base = pd.DataFrame({"Frame": frame_list})
+
+            # 帧序列用于 rally 切分(基于全帧列表)
+            frames = base['Frame'].astype(int).tolist()
             gaps = [frames[i+1] - frames[i] for i in range(len(frames)-1)]
             rally_breaks = [i+1 for i, gap in enumerate(gaps) if gap > 100]
-            
-            # Create rally segments
             rally_segments = []
             start_idx = 0
-            
             for break_idx in rally_breaks:
                 rally_segments.append((start_idx, break_idx))
                 start_idx = break_idx
-            
-            # Add the last segment
             if start_idx < len(frames):
                 rally_segments.append((start_idx, len(frames)))
-            
-            # Filter out short rallies (less than 150 frames)
             rally_segments = [(start, end) for start, end in rally_segments if end - start >= 150]
-            
             print(f"Detected {len(rally_segments)} valid rallies")
-            
-            # Check coordinate ranges for normalization
-            print("\nRaw coordinate ranges:")
-            print(f"Upper_Court_X: {df['Upper_Court_X'].min()} to {df['Upper_Court_X'].max()}")
-            print(f"Upper_Court_Y: {df['Upper_Court_Y'].min()} to {df['Upper_Court_Y'].max()}")
-            print(f"Lower_Court_X: {df['Lower_Court_X'].min()} to {df['Lower_Court_X'].max()}")
-            print(f"Lower_Court_Y: {df['Lower_Court_Y'].min()} to {df['Lower_Court_Y'].max()}")
-            
-            # Normalize coordinates to standard badminton court size (13.4m x 6.1m)
-            print("\nNormalizing coordinates to standard court size...")
-            
-            # Create upper court player data with rally IDs
-            upper_df = df[['Frame', 'Upper_Court_X', 'Upper_Court_Y']].copy()
-            
-            # Filter out negative coordinates - they won't participate in visualization
-            # Use original coordinates
-            upper_df['normalized_x'] = upper_df['Upper_Court_X']
-            upper_df['normalized_y'] = upper_df['Upper_Court_Y']
-            
-            # Mark rows with negative coordinates for later filtering
-            upper_df['valid_coords'] = (upper_df['normalized_x'] >= 0) & (upper_df['normalized_y'] >= 0)
-            
-            upper_df.rename(columns={
-                'Frame': 'frame',
-                'normalized_x': 'court_x',
-                'normalized_y': 'court_y'
-            }, inplace=True)
-            upper_df['player_position'] = 'upper'
-            
-            # Assign rally IDs based on detected segments
-            upper_df['rally_id'] = 0  # Default to 0 (no rally)
-            for rally_id, (start, end) in enumerate(rally_segments, 1):
-                mask = (upper_df.index >= start) & (upper_df.index < end)
-                upper_df.loc[mask, 'rally_id'] = rally_id
-            
-            # Create lower court player data with rally IDs
-            lower_df = df[['Frame', 'Lower_Court_X', 'Lower_Court_Y']].copy()
-            
-            # Use original coordinates
-            lower_df['normalized_x'] = lower_df['Lower_Court_X']
-            lower_df['normalized_y'] = lower_df['Lower_Court_Y']
-            
-            # Mark rows with negative coordinates for later filtering
-            lower_df['valid_coords'] = (lower_df['normalized_x'] >= 0) & (lower_df['normalized_y'] >= 0)
-            
-            lower_df.rename(columns={
-                'Frame': 'frame',
-                'normalized_x': 'court_x',
-                'normalized_y': 'court_y'
-            }, inplace=True)
-            lower_df['player_position'] = 'lower'
-            
-            # Assign same rally IDs to lower court player
-            lower_df['rally_id'] = 0  # Default to 0 (no rally)
-            for rally_id, (start, end) in enumerate(rally_segments, 1):
-                mask = (lower_df.index >= start) & (lower_df.index < end)
-                lower_df.loc[mask, 'rally_id'] = rally_id
-            
+
+            # 为每个槽位构造独立 DataFrame
+            slot_dfs: dict[str, pd.DataFrame] = {}
+            for slot, rows in slot_rows.items():
+                sdf = pd.DataFrame(rows, columns=["Frame", "court_x", "court_y"])
+                sdf = sdf.drop_duplicates(subset=["Frame"], keep="last")
+                # 与全帧基表对齐(缺失补 None)
+                sdf = base.merge(sdf, on="Frame", how="left")
+                sdf['valid_coords'] = (sdf['court_x'].notna()) & (sdf['court_y'].notna()) & \
+                                      (sdf['court_x'] >= 0) & (sdf['court_y'] >= 0)
+                sdf['player_position'] = slot
+                sdf['rally_id'] = 0
+                for rally_id, (start, end) in enumerate(rally_segments, 1):
+                    mask = (sdf.index >= start) & (sdf.index < end)
+                    sdf.loc[mask, 'rally_id'] = rally_id
+                slot_dfs[slot] = sdf
+
             # 计算每个回合的移动统计数据
-            self._calculate_movement_stats(upper_df, lower_df, rally_segments, df['Frame'])
-            
-            # Combine upper and lower court data
-            combined_df = pd.concat([upper_df, lower_df], ignore_index=True)
-            
-            # Filter out invalid values, frames not in rallies, and negative coordinates
+            self._calculate_movement_stats(slot_dfs, rally_segments, base['Frame'])
+
+            # 合并所有槽位数据
+            combined_df = pd.concat(slot_dfs.values(), ignore_index=True)
             combined_df = combined_df.dropna(subset=['court_x', 'court_y'])
             combined_df = combined_df[combined_df['rally_id'] > 0]
             combined_df = combined_df[combined_df['valid_coords'] == True]
-            
-            # Drop the temporary column as it's no longer needed
             combined_df = combined_df.drop('valid_coords', axis=1)
-            
+
             print(f"\nData conversion complete, {len(combined_df)} records total")
             return combined_df
-            
+
         except Exception as e:
             print(f"Error loading data: {e}")
             import traceback
@@ -467,109 +406,96 @@ class PlayerPositionVisualizer:
         if self.df.empty:
             print("No data to visualize")
             return
-            
+
         # Get all rally IDs
         rally_ids = self.df['rally_id'].unique()
-        
+
         for rally_id in rally_ids:
-            # Skip invalid rally IDs
             if pd.isna(rally_id):
                 continue
-                
+
             print(f"Processing visualizations for rally {rally_id}...")
-            
-            # Filter current rally data
+
             rally_df = self.df[self.df['rally_id'] == rally_id]
-            
-            # Separate upper and lower court players
-            upper_df = rally_df[rally_df['player_position'] == 'upper']
-            lower_df = rally_df[rally_df['player_position'] == 'lower']
-            
             # Generate heatmap
-            self._generate_heatmap(upper_df, lower_df, f"rally_{int(rally_id)}_heatmap.png")
-            
+            self._generate_heatmap(rally_df, f"rally_{int(rally_id)}_heatmap.png")
             # Generate scatter plot
-            self._generate_scatter_plot(upper_df, lower_df, f"rally_{int(rally_id)}_scatter.png")
-            
+            self._generate_scatter_plot(rally_df, f"rally_{int(rally_id)}_scatter.png")
+
         print("All rally visualizations generated")
-            
+
     def _generate_match_visualizations(self):
         """Generate visualizations for the entire match"""
         if self.df.empty:
             print("No data to visualize")
             return
-            
+
         print("Generating match-wide visualizations...")
-        
-        # Separate upper and lower court players
-        upper_df = self.df[self.df['player_position'] == 'upper']
-        lower_df = self.df[self.df['player_position'] == 'lower']
-        
         # Generate heatmap
-        self._generate_heatmap(upper_df, lower_df, "match_heatmap.png")
-        
+        self._generate_heatmap(self.df, "match_heatmap.png")
         # Generate scatter plot
-        self._generate_scatter_plot(upper_df, lower_df, "match_scatter.png")
-        
+        self._generate_scatter_plot(self.df, "match_scatter.png")
         print("Match-wide visualizations generated successfully")
             
-    def _generate_heatmap(self, upper_df, lower_df, filename):
-        """Generate heatmap"""
+    def _generate_heatmap(self, source_df, filename):
+        """Generate heatmap(按槽位遍历)"""
         fig = plt.figure(figsize=(14, 8), facecolor='#fbfcfa')
         grid = fig.add_gridspec(1, 2, width_ratios=[1.25, 0.75], wspace=0.08)
         ax = fig.add_subplot(grid[0, 0])
         stats_ax = fig.add_subplot(grid[0, 1])
         ax.set_facecolor('#ffffff')
         stats_ax.set_facecolor('#fbfcfa')
-        
-        upper_cmap = LinearSegmentedColormap.from_list("upper_cmap", [(1, 1, 1, 0), '#ffe1dd', self.upper_color])
-        lower_cmap = LinearSegmentedColormap.from_list("lower_cmap", [(1, 1, 1, 0), '#dbeafe', self.lower_color])
-        
+
         # Create court background
         self._draw_court(ax)
-        
-        # Draw upper court heatmap if data available
-        if not upper_df.empty:
+
+        # 按槽位绘制热力图
+        legend_handles = []
+        for slot in source_df['player_position'].unique():
+            slot_df = source_df[source_df['player_position'] == slot]
+            if slot_df.empty:
+                continue
+            color = self.player_colors.get(slot, self.upper_color)
+            light = '#ffe1dd' if slot in ('A', 'upper') else '#dbeafe'
+            cmap = LinearSegmentedColormap.from_list(f"{slot}_cmap", [(1, 1, 1, 0), light, color])
             sns.kdeplot(
-                x=upper_df['court_x'],
-                y=upper_df['court_y'],
-                cmap=upper_cmap,
+                x=slot_df['court_x'],
+                y=slot_df['court_y'],
+                cmap=cmap,
                 fill=True,
-                alpha=0.78,
+                alpha=0.6,
                 levels=10,
                 thresh=0.03,
                 bw_adjust=0.9,
-                ax=ax
+                ax=ax,
             )
-        
-        # Draw lower court heatmap if data available
-        if not lower_df.empty:
-            sns.kdeplot(
-                x=lower_df['court_x'],
-                y=lower_df['court_y'],
-                cmap=lower_cmap,
-                fill=True,
-                alpha=0.78,
-                levels=10,
-                thresh=0.03,
-                bw_adjust=0.9,
-                ax=ax
+            legend_handles.append(mpatches.Patch(color=color, label=self.player_labels.get(slot, slot)))
+
+        # 图例放左侧球场图上,避免与右侧统计文本重叠
+        if legend_handles:
+            ax.legend(
+                handles=legend_handles,
+                loc='upper left',
+                bbox_to_anchor=(0.01, 0.99),
+                fontsize=11,
+                framealpha=0.9,
+                facecolor='#ffffff',
+                edgecolor='#d7dfdb',
+                prop=chinese_font,
             )
-        
+
         # 添加统计信息
         rally_id = None
-        if 'rally_id' in upper_df.columns:
-            rally_ids = upper_df['rally_id'].unique()
+        if 'rally_id' in source_df.columns:
+            rally_ids = source_df['rally_id'].unique()
             if len(rally_ids) == 1 and rally_ids[0] != 0:
                 rally_id = int(rally_ids[0])
-        
-        # 显示单个回合的统计或者整体统计
+
         if rally_id and rally_id in self.movement_stats:
             self._add_stats_to_plot(rally_id, stats_ax)
         else:
-            # 如果是整场比赛数据，显示所有回合的总统计
             self._add_stats_to_plot(None, stats_ax)
-        
+
         ax.set_xlim(0, self.court_width)
         ax.set_ylim(self.court_length, 0)
         ax.set_title('球员位置热力图', color='#101614', fontsize=18, fontweight='bold', pad=14, fontproperties=chinese_font)
@@ -577,12 +503,11 @@ class PlayerPositionVisualizer:
         ax.set_ylabel('场地长度 (米)', color='#33443d', fontproperties=chinese_font)
         ax.tick_params(colors='#33443d')
         ax.set_aspect('equal', adjustable='box')
-        
-        # Save plot
+
         save_path = os.path.join(self.output_dir, 'heatmaps', filename)
         fig.savefig(save_path, dpi=180, bbox_inches='tight', facecolor=fig.get_facecolor())
         plt.close()
-        
+
         print(f"热力图已保存至: {save_path}")
             
     # 注意：这个方法被新的_calculate_player_stats(self, positions, times)方法替代
@@ -590,119 +515,69 @@ class PlayerPositionVisualizer:
             
     def _add_stats_to_plot(self, rally_id=None, ax=None):
         """
-        在图表上添加统计信息
+        在图表上添加统计信息(按槽位遍历)
         Args:
             rally_id: 回合ID，如果为None则显示所有回合的总统计信息
         """
-        # 如果没有统计数据，直接返回
         if not self.movement_stats:
             return
-        # 如果提供了rally_id但不存在，则返回
         if rally_id is not None and rally_id not in self.movement_stats:
             return
-            
-        # 创建信息文本
+
+        # 统计各槽位在各回合中出现的键,确定要显示哪些槽位
+        all_slots: list[str] = []
+        for stats in self.movement_stats.values():
+            for slot in stats.keys():
+                if slot not in all_slots:
+                    all_slots.append(slot)
+
         if rally_id is not None:
-            # 单个回合的统计信息
             stats = self.movement_stats[rally_id]
-            info_text = f"回合 {rally_id} 统计:\n"
-            info_text += "\n"
-            
-            # 上场球员统计
-            if 'upper' in stats:
-                upper_stats = stats['upper']
-                info_text += f"上场球员:\n"
-                info_text += f"  平均速度: {upper_stats['avg_speed']:.2f} 米/秒\n"
-                info_text += f"  最大速度: {upper_stats['max_speed']:.2f} 米/秒\n"
-                info_text += f"  移动距离: {upper_stats['total_distance']:.2f} 米\n"
-            
-            # 下场球员统计
-            if 'lower' in stats:
-                lower_stats = stats['lower']
-                info_text += f"\n下场球员:\n"
-                info_text += f"  平均速度: {lower_stats['avg_speed']:.2f} 米/秒\n"
-                info_text += f"  最大速度: {lower_stats['max_speed']:.2f} 米/秒\n"
-                info_text += f"  移动距离: {lower_stats['total_distance']:.2f} 米\n"
+            info_text = f"回合 {rally_id} 统计:\n\n"
+            for slot in all_slots:
+                if slot not in stats:
+                    continue
+                s = stats[slot]
+                label = self.player_labels.get(slot, slot)
+                info_text += f"{label}:\n"
+                info_text += f"  平均速度: {s['avg_speed']:.2f} 米/秒\n"
+                info_text += f"  最大速度: {s['max_speed']:.2f} 米/秒\n"
+                info_text += f"  移动距离: {s['total_distance']:.2f} 米\n"
         else:
-            # 整场比赛的统计信息
-            info_text = f"比赛统计\n"
-            info_text += "\n"
-            
-            # 计算所有回合的总统计数据
-            upper_distances = []
-            upper_speeds = []
-            upper_avg_speeds = []
-            lower_distances = []
-            lower_speeds = []
-            lower_avg_speeds = []
-            
-            for rally_stats in self.movement_stats.values():
-                if 'upper' in rally_stats:
-                    upper_distances.append(rally_stats['upper']['total_distance'])
-                    if rally_stats['upper'].get('max_speed', 0) > 0:
-                        upper_speeds.append(rally_stats['upper']['max_speed'])
-                    if rally_stats['upper'].get('avg_speed', 0) > 0:
-                        upper_avg_speeds.append(rally_stats['upper']['avg_speed'])
-                        
-                if 'lower' in rally_stats:
-                    lower_distances.append(rally_stats['lower']['total_distance'])
-                    if rally_stats['lower'].get('max_speed', 0) > 0:
-                        lower_speeds.append(rally_stats['lower']['max_speed'])
-                    if rally_stats['lower'].get('avg_speed', 0) > 0:
-                        lower_avg_speeds.append(rally_stats['lower']['avg_speed'])
-            
-            # 添加上场球员信息
-            info_text += f"上场球员:\n"
-            if upper_distances:
-                total_distance = sum(upper_distances)
-                info_text += f"  总移动距离: {total_distance:.2f} 米\n"
-                info_text += f"  平均每回合距离: {total_distance/len(upper_distances):.2f} 米\n"
-            if upper_avg_speeds:
-                avg_speed = sum(upper_avg_speeds) / len(upper_avg_speeds)
-                info_text += f"  平均速度: {avg_speed:.2f} 米/秒\n"
-            if upper_speeds:
-                info_text += f"  最大速度: {max(upper_speeds):.2f} 米/秒\n"
-            
-            # 添加下场球员信息
-            info_text += f"\n下场球员:\n"
-            if lower_distances:
-                total_distance = sum(lower_distances)
-                info_text += f"  总移动距离: {total_distance:.2f} 米\n"
-                info_text += f"  平均每回合距离: {total_distance/len(lower_distances):.2f} 米\n"
-            if lower_avg_speeds:
-                avg_speed = sum(lower_avg_speeds) / len(lower_avg_speeds)
-                info_text += f"  平均速度: {avg_speed:.2f} 米/秒\n"
-            if lower_speeds:
-                info_text += f"  最大速度: {max(lower_speeds):.2f} 米/秒\n"
-        
+            info_text = f"比赛统计\n\n"
+            for slot in all_slots:
+                distances = []
+                speeds = []
+                avg_speeds = []
+                for rally_stats in self.movement_stats.values():
+                    if slot in rally_stats:
+                        distances.append(rally_stats[slot]['total_distance'])
+                        if rally_stats[slot].get('max_speed', 0) > 0:
+                            speeds.append(rally_stats[slot]['max_speed'])
+                        if rally_stats[slot].get('avg_speed', 0) > 0:
+                            avg_speeds.append(rally_stats[slot]['avg_speed'])
+                label = self.player_labels.get(slot, slot)
+                info_text += f"{label}:\n"
+                if distances:
+                    total_distance = sum(distances)
+                    info_text += f"  总移动距离: {total_distance:.2f} 米\n"
+                    info_text += f"  平均每回合距离: {total_distance/len(distances):.2f} 米\n"
+                if avg_speeds:
+                    info_text += f"  平均速度: {sum(avg_speeds)/len(avg_speeds):.2f} 米/秒\n"
+                if speeds:
+                    info_text += f"  最大速度: {max(speeds):.2f} 米/秒\n"
+
         if ax is not None:
             ax.axis('off')
             ax.text(
-                0.04,
-                0.92,
-                "移动统计",
-                transform=ax.transAxes,
-                fontsize=20,
-                weight='bold',
-                color='#101614',
-                fontproperties=chinese_font,
+                0.04, 0.96, "移动统计", transform=ax.transAxes,
+                fontsize=20, weight='bold', color='#101614', fontproperties=chinese_font,
             )
             ax.text(
-                0.04,
-                0.82,
-                info_text,
-                transform=ax.transAxes,
-                va='top',
-                ha='left',
+                0.04, 0.88, info_text, transform=ax.transAxes, va='top', ha='left',
                 bbox=dict(facecolor='#ffffff', alpha=0.96, boxstyle='round,pad=0.9', edgecolor='#d7dfdb'),
-                fontsize=13,
-                linespacing=1.45,
-                color='#101614',
-                fontproperties=chinese_font,
+                fontsize=12, linespacing=1.4, color='#101614', fontproperties=chinese_font,
             )
-            ax.scatter([0.08, 0.08], [0.2, 0.13], s=120, c=[self.upper_color, self.lower_color], transform=ax.transAxes)
-            ax.text(0.15, 0.2, "上场球员", transform=ax.transAxes, va='center', fontsize=12, color='#33443d', fontproperties=chinese_font)
-            ax.text(0.15, 0.13, "下场球员", transform=ax.transAxes, va='center', fontsize=12, color='#33443d', fontproperties=chinese_font)
             return
 
         plt.text(0.98, 0.5, info_text,
@@ -710,89 +585,61 @@ class PlayerPositionVisualizer:
                 verticalalignment='center',
                 transform=plt.gca().transAxes,
                 bbox=dict(facecolor='#ffffff', alpha=0.88, boxstyle='round,pad=0.7', edgecolor='#d7dfdb'),
-                fontsize=14,
-                weight='bold',
-                color='#101614',
-                fontproperties=chinese_font)
+                fontsize=14, weight='bold', color='#101614', fontproperties=chinese_font)
     
-    def _generate_scatter_plot(self, upper_df, lower_df, filename):
-        """Generate scatter plot"""
+    def _generate_scatter_plot(self, source_df, filename):
+        """Generate scatter plot(按槽位遍历)"""
         fig = plt.figure(figsize=(14, 8), facecolor='#fbfcfa')
         grid = fig.add_gridspec(1, 2, width_ratios=[1.25, 0.75], wspace=0.08)
         ax = fig.add_subplot(grid[0, 0])
         stats_ax = fig.add_subplot(grid[0, 1])
         ax.set_facecolor('#ffffff')
         stats_ax.set_facecolor('#fbfcfa')
-        
+
         # Create court background
         self._draw_court(ax)
-        
-        # Draw scatter plot for upper court
-        if not upper_df.empty:
-            # Check if rally information is available
-            if 'rally_id' in upper_df.columns:
-                # Group by rally and plot with different colors
-                for rally_id, rally_data in upper_df.groupby('rally_id'):
-                    ax.scatter(
-                        rally_data['court_x'], 
-                        rally_data['court_y'],
-                        alpha=0.58,
-                        s=26,
-                        marker='o',  # circle marker
-                        color=self.upper_color,
-                        label=f'上场球员 回合 {int(rally_id)}' if rally_id == upper_df['rally_id'].iloc[0] else "_nolegend_"
-                    )
-            else:
-                ax.scatter(
-                    upper_df['court_x'], 
-                    upper_df['court_y'],
-                    alpha=0.58,
-                    s=26,
-                    marker='o',
-                    color=self.upper_color,
-                    label='上场球员'
-                )
-            
-        # Draw scatter plot for lower court
-        if not lower_df.empty:
-            # Check if rally information is available
-            if 'rally_id' in lower_df.columns:
-                # Group by rally and plot with different colors
-                for rally_id, rally_data in lower_df.groupby('rally_id'):
-                    ax.scatter(
-                        rally_data['court_x'], 
-                        rally_data['court_y'],
-                        alpha=0.58,
-                        s=28,
-                        marker='^',  # triangle marker
-                        color=self.lower_color,
-                        label=f'下场球员 回合 {int(rally_id)}' if rally_id == lower_df['rally_id'].iloc[0] else "_nolegend_"
-                    )
-            else:
-                ax.scatter(
-                    lower_df['court_x'], 
-                    lower_df['court_y'],
-                    alpha=0.58,
-                    s=28,
-                    marker='^',  # triangle marker
-                    color=self.lower_color,
-                    label='下场球员'
-                )
-        
+
+        # 按槽位绘制散点
+        markers = {'A': 'o', 'B': 's', 'C': '^', 'D': 'D', 'upper': 'o', 'lower': '^'}
+        scatter_handles = []
+        for slot in source_df['player_position'].unique():
+            slot_df = source_df[source_df['player_position'] == slot]
+            if slot_df.empty:
+                continue
+            color = self.player_colors.get(slot, self.upper_color)
+            marker = markers.get(slot, 'o')
+            label = self.player_labels.get(slot, slot)
+            scatter = ax.scatter(
+                slot_df['court_x'], slot_df['court_y'],
+                alpha=0.58, s=24, marker=marker, color=color, label=label,
+            )
+            scatter_handles.append(scatter)
+
+        # 图例放左侧球场图上,避免与右侧统计文本重叠
+        if scatter_handles:
+            ax.legend(
+                handles=scatter_handles,
+                loc='upper left',
+                bbox_to_anchor=(0.01, 0.99),
+                fontsize=11,
+                framealpha=0.9,
+                facecolor='#ffffff',
+                edgecolor='#d7dfdb',
+                prop=chinese_font,
+            )
+
         # 添加统计信息
         rally_id = None
-        if 'rally_id' in upper_df.columns:
-            rally_ids = upper_df['rally_id'].unique()
+        if 'rally_id' in source_df.columns:
+            rally_ids = source_df['rally_id'].unique()
             if len(rally_ids) == 1 and rally_ids[0] != 0:
                 rally_id = int(rally_ids[0])
-        
-        # 显示单个回合的统计或者整体统计
+
         if rally_id and rally_id in self.movement_stats:
             self._add_stats_to_plot(rally_id, stats_ax)
         else:
-            # 如果是整场比赛数据，显示所有回合的总统计
             self._add_stats_to_plot(None, stats_ax)
-        
+
         ax.set_xlim(0, self.court_width)
         ax.set_ylim(self.court_length, 0)
         ax.set_title('球员位置散点图', color='#101614', fontsize=18, fontweight='bold', pad=14, fontproperties=chinese_font)
@@ -800,12 +647,11 @@ class PlayerPositionVisualizer:
         ax.set_ylabel('场地长度 (米)', color='#33443d', fontproperties=chinese_font)
         ax.tick_params(colors='#33443d')
         ax.set_aspect('equal', adjustable='box')
-        
-        # Save plot
+
         save_path = os.path.join(self.output_dir, 'scatter_plots', filename)
         fig.savefig(save_path, dpi=180, bbox_inches='tight', facecolor=fig.get_facecolor())
         plt.close()
-        
+
         print(f"散点图已保存至: {save_path}")
     
     def visualize(self):

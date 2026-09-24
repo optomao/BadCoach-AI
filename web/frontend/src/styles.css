@@ -18,7 +18,7 @@
   --radius: 8px;
   --radius-sm: 6px;
   --mono: "SFMono-Regular", "Cascadia Mono", "Roboto Mono", Consolas, monospace;
-  --sans: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --sans: "Alibaba PuHuiTi", "AlibabaPuHuiTi", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
 }
 
 * {
@@ -872,6 +872,50 @@ button {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.timeline-scroll {
+  max-height: 480px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding-right: 4px;
+}
+
+.timeline-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.timeline-scroll::-webkit-scrollbar-thumb {
+  background: rgba(15, 143, 99, 0.25);
+  border-radius: 999px;
+}
+
+.live-stats-bar {
+  display: flex;
+  gap: 20px;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid rgba(15, 143, 99, 0.12);
+  margin-bottom: 12px;
+}
+
+.live-stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.live-stat-label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.live-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
 }
 
 .timeline-item {

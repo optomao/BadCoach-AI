@@ -6,12 +6,13 @@ import { JobConfig } from "../types";
 
 const defaultConfig: JobConfig = {
   language: "zh",
-  pose_family: "yolo-pose",
+  pose_family: "rtmpose",
   pose_mode: "balanced",
   yolo_pose_model: "yolo11n-pose.pt",
   keep_audio: true,
   visualize_positions: true,
   ball_model_path: "weights/yolo11s-ball.pt",
+  match_type: "auto",
   trim_enabled: false,
   trim_start_sec: "",
   trim_end_sec: "",
@@ -412,6 +413,14 @@ export function UploadPage() {
           <label className="field">
             <span>球模型路径</span>
             <input value={config.ball_model_path} onChange={(event) => setConfig({ ...config, ball_model_path: event.target.value })} />
+          </label>
+          <label className="field">
+            <span>对局模式</span>
+            <select value={config.match_type} onChange={(event) => setConfig({ ...config, match_type: event.target.value as JobConfig["match_type"] })}>
+              <option value="auto">自动识别</option>
+              <option value="singles">单打</option>
+              <option value="doubles">双打</option>
+            </select>
           </label>
         </div>
 

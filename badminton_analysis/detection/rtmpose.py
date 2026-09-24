@@ -58,6 +58,28 @@ class RTMPoseProcessor:
         }
         return os.path.join(self.get_models_dir(), filenames.get(mode, filenames['balanced']))
 
+    def get_rtmpose_models(self, mode):
+        """Return (det_model, pose_model, det_input_size, pose_input_size) for the selected mode.
+
+        Maps modes to the actual ONNX files that rtmlib downloads:
+        - lightweight: yolox_tiny + rtmpose-s
+        - balanced:    yolox_m    + rtmpose-m
+        - performance: yolox_m    + rtmpose-m
+        """
+        models_dir = self.get_models_dir()
+        if mode == 'lightweight':
+            det = os.path.join(models_dir, 'yolox_tiny_8xb8-300e_humanart-6f3252f9.onnx')
+            pose = os.path.join(models_dir, 'rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.onnx')
+            det_size = (416, 416)
+            pose_size = (192, 256)
+        else:
+            # balanced and performance both use yolox_m + rtmpose-m
+            det = os.path.join(models_dir, 'yolox_m_8xb8-300e_humanart-c2c7a14a.onnx')
+            pose = os.path.join(models_dir, 'rtmpose-m_simcc-body7_pt-body7_420e-256x192-e48f03d0_20230504.onnx')
+            det_size = (640, 640)
+            pose_size = (192, 256)
+        return det, pose, det_size, pose_size
+
     def create_rtmo_model(self, mode):
         """Create RTMO, preferring a local ONNX file over rtmlib's cache downloader."""
         pose_model = self.get_rtmo_model_path(mode)
@@ -88,39 +110,23 @@ class RTMPoseProcessor:
                 return
             
             # Check if local model files exist
-            models_dir = self.get_models_dir()
-            if os.path.exists(models_dir):
-                # Try to use local models
-                det_model = os.path.join(models_dir, 'yolox_nano_8xb8-300e_humanart-40f6f0d0.onnx')
-                
-                # Select different pose detection models based on mode
-                if mode == 'lightweight':
-                    pose_model = os.path.join(models_dir, 'rtmpose-t_simcc-body7_pt-body7_420e-256x192-026a1439_20230504.onnx')
-                    pose_input_size = (192, 256)
-                elif mode == 'performance':
-                    pose_model = os.path.join(models_dir, 'rtmpose-m_simcc-body7_pt-body7_420e-256x192-e48f03d0_20230504.onnx')
-                    pose_input_size = (192, 256)
-                else:  # balanced
-                    pose_model = os.path.join(models_dir, 'rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.onnx')
-                    pose_input_size = (192, 256)
-                
-                if os.path.exists(det_model) and os.path.exists(pose_model):
-                    print(f"Using local model files ({mode} mode)")
-                    self.wholebody = Body(
-                        det=det_model,
-                        det_input_size=(416, 416),
-                        pose=pose_model,
-                        pose_input_size=pose_input_size,
-                        backend=self.backend,
-                        device=self.device
-                    )
-                    print("RTMPose local model initialization successful")
-                    return
-                else:
-                    print("Local model files incomplete, using online download")
+            det_model, pose_model, det_input_size, pose_input_size = self.get_rtmpose_models(mode)
+
+            if os.path.exists(det_model) and os.path.exists(pose_model):
+                print(f"Using local model files ({mode} mode): det={os.path.basename(det_model)}, pose={os.path.basename(pose_model)}")
+                self.wholebody = Body(
+                    det=det_model,
+                    det_input_size=det_input_size,
+                    pose=pose_model,
+                    pose_input_size=pose_input_size,
+                    backend=self.backend,
+                    device=self.device
+                )
+                print("RTMPose local model initialization successful")
+                return
             else:
-                print("models directory doesn't exist, using online download")
-            
+                print("Local model files incomplete, using online download")
+
             # Use online download
             self.wholebody = Body(
                 mode=mode,
@@ -143,29 +149,18 @@ class RTMPoseProcessor:
                         self.wholebody = self.create_rtmo_model(mode)
                         print("RTMO CPU model initialization successful")
                         return
-                    models_dir = self.get_models_dir()
-                    if os.path.exists(models_dir):
-                        det_model = os.path.join(models_dir, 'yolox_nano_8xb8-300e_humanart-40f6f0d0.onnx')
-                        if mode == 'lightweight':
-                            pose_model = os.path.join(models_dir, 'rtmpose-t_simcc-body7_pt-body7_420e-256x192-026a1439_20230504.onnx')
-                            pose_input_size = (192, 256)
-                        elif mode == 'performance':
-                            pose_model = os.path.join(models_dir, 'rtmpose-m_simcc-body7_pt-body7_420e-256x192-e48f03d0_20230504.onnx')
-                            pose_input_size = (192, 256)
-                        else:
-                            pose_model = os.path.join(models_dir, 'rtmpose-s_simcc-body7_pt-body7_420e-256x192-acd4a1ef_20230504.onnx')
-                            pose_input_size = (192, 256)
-                        if os.path.exists(det_model) and os.path.exists(pose_model):
-                            self.wholebody = Body(
-                                det=det_model,
-                                det_input_size=(416, 416),
-                                pose=pose_model,
-                                pose_input_size=pose_input_size,
-                                backend=self.backend,
-                                device=self.device
-                            )
-                            print("RTMPose CPU model initialization successful")
-                            return
+                    det_model, pose_model, det_input_size, pose_input_size = self.get_rtmpose_models(mode)
+                    if os.path.exists(det_model) and os.path.exists(pose_model):
+                        self.wholebody = Body(
+                            det=det_model,
+                            det_input_size=det_input_size,
+                            pose=pose_model,
+                            pose_input_size=pose_input_size,
+                            backend=self.backend,
+                            device=self.device
+                        )
+                        print("RTMPose CPU model initialization successful")
+                        return
                     # Fallback to online as last resort
                     self.wholebody = Body(
                         mode=mode,

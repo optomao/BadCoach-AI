@@ -15,6 +15,7 @@ class JobConfig(BaseModel):
     keep_audio: bool = True
     visualize_positions: bool = True
     ball_model_path: str = "weights/yolo11s-ball.pt"
+    match_type: Literal["auto", "singles", "doubles"] = "auto"
     trim_enabled: bool = False
     trim_start_sec: float | None = None
     trim_end_sec: float | None = None

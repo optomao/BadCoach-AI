@@ -25,6 +25,7 @@ export async function createJob(payload: CreateJobPayload): Promise<{ job_id: st
   formData.set("keep_audio", String(payload.config.keep_audio));
   formData.set("visualize_positions", String(payload.config.visualize_positions));
   formData.set("ball_model_path", payload.config.ball_model_path);
+  formData.set("match_type", payload.config.match_type);
   formData.set("trim_enabled", String(payload.config.trim_enabled));
   formData.set("trim_start_sec", String(payload.config.trim_start_sec ?? ""));
   formData.set("trim_end_sec", String(payload.config.trim_end_sec ?? ""));

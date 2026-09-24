@@ -10,6 +10,12 @@ export const statusLabels: Record<JobStatus, string> = {
   cancelled: "已取消",
 };
 
+export const matchTypeLabels: Record<string, string> = {
+  auto: "自动识别",
+  singles: "单打",
+  doubles: "双打",
+};
+
 export const artifactLabels: Record<string, string> = {
   annotated_video: "标注视频",
   detections: "检测数据",

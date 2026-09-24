@@ -64,15 +64,38 @@ class PlayerPoseVisualizer:
             if kp_arr.ndim != 2 or kp_arr.shape[0] < 17 or kp_arr.shape[1] < 2:
                 continue
 
-            lf = kp_arr[15]
-            rf = kp_arr[16]
-            if lf[0] <= 1 or lf[1] <= 1 or rf[0] <= 1 or rf[1] <= 1:
+            # 统计有效关键点数量(坐标>1 视为有效)
+            valid_mask = (kp_arr[:, 0] > 1) & (kp_arr[:, 1] > 1)
+            valid_count = int(valid_mask.sum())
+            # 至少需要 5 个有效关键点才认为是有效人体
+            if valid_count < 5:
                 continue
 
-            mid_point = (
-                (float(lf[0] + x1) + float(rf[0] + x1)) / 2,
-                (float(lf[1] + y1) + float(rf[1] + y1)) / 2 + 10,
-            )
+            # 降级质心计算: 双脚 → 双髋 → 所有有效关键点均值
+            # 远离镜头的球员(上半区)脚踝常检测不到,用髋部或均值兜底
+            lf = kp_arr[15]
+            rf = kp_arr[16]
+            lh_hip = kp_arr[11]
+            rh_hip = kp_arr[12]
+
+            feet_valid = (lf[0] > 1 and lf[1] > 1 and rf[0] > 1 and rf[1] > 1)
+            hips_valid = (lh_hip[0] > 1 and lh_hip[1] > 1 and rh_hip[0] > 1 and rh_hip[1] > 1)
+
+            if feet_valid:
+                mid_x = (float(lf[0]) + float(rf[0])) / 2
+                mid_y = (float(lf[1]) + float(rf[1])) / 2 + 10
+            elif hips_valid:
+                # 髋部中心,向下偏移补偿脚部位置
+                mid_x = (float(lh_hip[0]) + float(rh_hip[0])) / 2
+                mid_y = (float(lh_hip[1]) + float(rh_hip[1])) / 2 + 30
+            else:
+                # 所有有效关键点均值
+                valid_pts = kp_arr[valid_mask]
+                mid_x = float(valid_pts[:, 0].mean())
+                mid_y = float(valid_pts[:, 1].mean())
+
+            mid_point = (mid_x + x1, mid_y + y1)
+
             if not self._is_on_court(mid_point, active_court_mapper):
                 continue
 
@@ -130,16 +153,25 @@ class PlayerPoseVisualizer:
             if self.show_performance_stats:
                 print(f"Drawing skeleton took {time.time() - t0:.2f} sec")
 
+        # 各槽位颜色(BGR)
+        slot_colors = {
+            'A': (0, 255, 255),
+            'B': (0, 200, 0),
+            'C': (255, 0, 255),
+            'D': (0, 130, 255),
+        }
+
         t0 = time.time()
-        for position in ["upper", "lower"]:
-            if player_tracker.players[position] is None:
+        active_slots = player_tracker.get_active_slots() if hasattr(player_tracker, 'get_active_slots') else ['upper', 'lower']
+        for slot in active_slots:
+            if player_tracker.players.get(slot) is None:
                 continue
 
-            color = (0, 255, 255) if position == "upper" else (255, 0, 255)
-            cv2.circle(frame, tuple(map(int, player_tracker.players[position])), 5, color, -1, cv2.LINE_AA)
+            color = slot_colors.get(slot, (0, 255, 255) if slot in ('upper', 'A') else (255, 0, 255))
+            cv2.circle(frame, tuple(map(int, player_tracker.players[slot])), 5, color, -1, cv2.LINE_AA)
 
             if self.show_player_trajectories:
-                history = list(player_tracker.history[position])
+                history = list(player_tracker.history[slot])
                 for i, pos in enumerate(history):
                     if pos is None:
                         continue
@@ -151,7 +183,10 @@ class PlayerPoseVisualizer:
 
         if stats_visualizer is not None:
             t0 = time.time()
-            stats_visualizer.draw_player_stats(frame, cached_movement_stats, rally_count)
+            stats_visualizer.draw_player_stats(
+                frame, cached_movement_stats, rally_count,
+                active_slots=active_slots,
+            )
             if self.show_performance_stats:
                 print(f"Drawing player stats took {time.time() - t0:.2f} sec")
 

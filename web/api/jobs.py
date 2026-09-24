@@ -87,6 +87,7 @@ class JobManager:
                 keep_audio=config.keep_audio,
                 language=config.language,
                 visualize_positions=config.visualize_positions,
+                match_type=config.match_type,
                 metadata={"job_name": job.name},
             )
 

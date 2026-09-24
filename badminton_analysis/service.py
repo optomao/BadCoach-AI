@@ -27,6 +27,7 @@ class AnalysisConfig:
     keep_audio: bool = True
     language: str = "zh"
     visualize_positions: bool = True
+    match_type: str = "auto"
     metadata: dict = field(default_factory=dict)
 
 
@@ -70,6 +71,7 @@ def _build_summary(config: AnalysisConfig, started_at: float, ended_at: float, s
             "fps": float(system.fps),
             "frame_width": int(system.frame_width),
             "frame_height": int(system.frame_height),
+            "match_type": getattr(system.player_tracker, "match_mode", config.match_type),
         },
         "source": {
             "video_path": config.video_path,
@@ -119,6 +121,7 @@ def run_analysis(
         pose_family=config.pose_family,
         yolo_pose_model=config.yolo_pose_model,
         show_pose_roi=config.show_pose_roi,
+        match_type=config.match_type,
     )
     system.keep_audio = config.keep_audio
     system.calibration_path = config.calibration_path
